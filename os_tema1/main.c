@@ -1,7 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 
+int recursive = 0;
+char path[50];
+char *filter;
+
 void function(char *path, char *filter);
+void extract_path(char* full_arg);
 
 int main(int argc, char **argv)
 {
@@ -13,15 +18,12 @@ int main(int argc, char **argv)
         }
         else if (strstr(argv[1], "list"))
         {
-            int recursive = 0;
-            char *path;
-            char *filter;
 
             if (argv[2] != NULL)
             {
                 if (strstr(argv[2], "path"))
                 {
-                    path = strdup(argv[2]);
+                    extract_path(argv[2]);
                     printf("path %s\n", path);
                 }
                 else if (strstr(argv[2], "recursive"))
@@ -39,7 +41,7 @@ int main(int argc, char **argv)
             {
                 if (strstr(argv[3], "path"))
                 {
-                    path = strdup(argv[3]);
+                    extract_path(argv[3]);
                     printf("path %s\n", path);
                 }
                 else if (strstr(argv[3], "recursive"))
@@ -57,7 +59,7 @@ int main(int argc, char **argv)
             {
                 if (strstr(argv[4], "path"))
                 {
-                    path = strdup(argv[4]);
+                    extract_path(argv[4]);
                     printf("path %s\n", path);
                 }
                 else if (strstr(argv[4], "recursive"))
@@ -94,7 +96,12 @@ void function(char *path, char *filter)
     {
         char command[100];
         strcpy(command, "cd ");
-        strcat(command, "..");
-        system(command);
+        strcat(command, path);
+        system("cd .. \npwd \n cd ..\n pwd");
     }
+}
+
+void extract_path(char* full_arg)
+{
+    strncpy(path, full_arg + 5, sizeof(full_arg) - 5);
 }
