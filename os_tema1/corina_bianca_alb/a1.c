@@ -1,17 +1,54 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <unistd.h>
 #include <fcntl.h>
+
+#include <fcntl.h>
+
+#define NO_SECTION_TYPES 4
 
 int recursive = 0;
 char path[200];
 char filter[50];
 
+int wrong_type = 0;
+int parse_error = 0;
+char error_str[40];
+
 void print_to_file();
 void extract_path(char* full_arg);
 void analyze_file();
+void analyze_agrs(char *arg2, char *arg3, char *arg4);
+void parse_sf();
+void parse_err(char *err);
+
+struct SF_header
+{
+    uint32_t magic;
+    uint16_t header_size;
+    uint32_t version;
+    uint8_t no_of_sections;
+};
+
+struct SF_section_header
+{
+    uint8_t name[9];
+    uint16_t sect_type;
+    uint32_t sect_offset;
+    uint32_t sect_size;
+
+};
+
+struct SF_header header;
+struct SF_section_header section_header[17];
+
+int section_types[] = {22, 41, 95, 55};
 
 int main(int argc, char **argv)
 {
@@ -23,56 +60,24 @@ int main(int argc, char **argv)
         }
         else if (strstr(argv[1], "list"))
         {
-            if (argv[2] != NULL)
-            {
-                if (strstr(argv[2], "path"))
-                {
-                    extract_path(argv[2]);
-                }
-                else if (strstr(argv[2], "recursive"))
-                {
-                    recursive = 1;
-                }
-                else
-                {
-                    strcpy(filter, argv[2]);
-                }
-            }
-
-            if (argv[3] != NULL)
-            {
-                if (strstr(argv[3], "path"))
-                {
-                    extract_path(argv[3]);
-                }
-                else if (strstr(argv[3], "recursive"))
-                {
-                    recursive = 1;
-                }
-                else
-                {
-                    strcpy(filter, argv[3]);
-                }
-            }
-
-            if (argv[4] != NULL)
-            {
-                if (strstr(argv[4], "path"))
-                {
-                    extract_path(argv[4]);
-                }
-                else if (strstr(argv[4], "recursive"))
-                {
-                    recursive = 1;
-                }
-                else
-                {
-                    strcpy(filter, argv[4]);
-                }
-            }
-
+            analyze_agrs(argv[2], argv[3], argv[4]);
             print_to_file();
             analyze_file();
+        }
+        else if (strstr(argv[1], "parse"))
+        {
+            extract_path(argv[2]);
+            parse_sf();
+        }
+        else if (strstr(argv[1], "extract"))
+        {
+            analyze_agrs(argv[2], argv[3], argv[4]);
+
+        }
+        else if (strstr(argv[1], "findall"))
+        {
+            extract_path(argv[2]);
+
         }
     }
 
@@ -121,6 +126,57 @@ void print_to_file()
 void extract_path(char* full_arg)
 {
     strncpy(path, full_arg + 5, strlen(full_arg) - 5);
+}
+
+void analyze_agrs(char *arg2, char *arg3, char *arg4)
+{
+    if (arg2 != NULL)
+    {
+        if (strstr(arg2, "path"))
+        {
+            extract_path(arg2);
+        }
+        else if (strstr(arg2, "recursive"))
+        {
+            recursive = 1;
+        }
+        else
+        {
+            strcpy(filter, arg2);
+        }
+    }
+
+    if (arg3 != NULL)
+    {
+        if (strstr(arg3, "path"))
+        {
+            extract_path(arg3);
+        }
+        else if (strstr(arg3, "recursive"))
+        {
+            recursive = 1;
+        }
+        else
+        {
+            strcpy(filter, arg3);
+        }
+    }
+
+    if (arg4 != NULL)
+    {
+        if (strstr(arg4, "path"))
+        {
+            extract_path(arg4);
+        }
+        else if (strstr(arg4, "recursive"))
+        {
+            recursive = 1;
+        }
+        else
+        {
+            strcpy(filter, arg4);
+        }
+    }
 }
 
 void analyze_file()
@@ -191,10 +247,13 @@ void analyze_file()
             }
             else if (strstr(filter, "permissions="))
             {
-                char permission[40];
-                strncpy(permission, filter + 12, strlen(filter) - 12);
+                char permission[10];
+                strncpy(permission, filter + 17, strlen(filter) - 17);
 
-
+                if (strstr(permission_token, permission))
+                {
+                    printf("%s\n", element_name);
+                }
             }
             else
             {
@@ -206,4 +265,158 @@ void analyze_file()
 
         token = strtok_r(NULL, "\n", &end_str);
     }
+}
+
+void parse_sf()
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+
+    if (S_ISREG(path_stat.st_mode))
+    {
+        int fd = open(path, O_RDONLY);
+
+        if (fd < 0)
+        {
+            printf("ERROR!\nfile cannot be opened");
+            exit(1);
+        }
+        else
+        {
+            long size_file = lseek(fd, 0, SEEK_END);
+
+            lseek(fd, size_file - 2, SEEK_SET);
+            if (read(fd, &header.magic, 4) < 0)
+            {
+                printf("Cannot read the magic");
+                exit(1);
+            }
+            if (header.magic != 0x3462)
+            {
+                parse_err("magic");
+            }
+
+            lseek(fd, size_file - 4, SEEK_SET);
+            if (read(fd, &header.header_size, 4) < 0)
+            {
+                printf("Cannot read the header size");
+                exit(1);
+            }
+
+            lseek(fd, size_file - header.header_size, SEEK_SET);
+            if (read(fd, &header.version, 8) < 0)
+            {
+                printf("Cannot read the version");
+                exit(1);
+            }
+            if (header.version < 120 || header.version > 235)
+            {
+                parse_err("version");
+            }
+
+            int no_of_sections_offset = size_file - (header.header_size - 4);
+            lseek(fd, no_of_sections_offset, SEEK_SET);
+            if (read(fd, &header.no_of_sections, 2) < 0)
+            {
+                printf("Cannot read the no. of sections");
+                exit(1);
+            }
+            if (header.no_of_sections < 8 || header.no_of_sections > 17)
+            {
+                parse_err("sect_nr");
+            }
+
+            int section_offset = no_of_sections_offset + 1;
+            for (int i = 0; i < header.no_of_sections; i++)
+            {
+                lseek(fd, section_offset, SEEK_SET);
+                if (read(fd, &section_header[i].name, 18) < 0)
+                {
+                    printf("Cannot read section name %d", i);
+                    exit(1);
+                }
+
+                section_offset += 9;
+                lseek(fd, section_offset, SEEK_SET);
+                if (read(fd, &section_header[i].sect_type, 4) < 0)
+                {
+                    printf("Cannot read section type %d", i);
+                    exit(1);
+                }
+
+                // if all section types are right so far
+                // check for wrong section type in order to
+                // update the error string
+                if (wrong_type == 0)
+                {
+                    int check_type = 1;
+                    for (int j=0; j < NO_SECTION_TYPES; j++)
+                    {
+                        if (section_types[j] == section_header[i].sect_type)
+                        {
+                            check_type = 0;
+                            break;
+                        }
+                    }
+
+                    if (check_type == 1)
+                    {
+                        wrong_type = 0;
+                        parse_err("sect_types");
+                    }
+                }
+
+                section_offset += 2;
+                lseek(fd, section_offset, SEEK_SET);
+                if (read(fd, &section_header[i].sect_offset, 8) < 0)
+                {
+                    printf("Cannot read section offset %d", i);
+                    exit(1);
+                }
+
+                section_offset += 4;
+                lseek(fd, section_offset, SEEK_SET);
+                if (read(fd, &section_header[i].sect_size, 8) < 0)
+                {
+                    printf("Cannot read section size %d", i);
+                    exit(1);
+                }
+
+                section_offset += 4;
+            }
+        }
+
+        if (parse_error == 1)
+        {
+            printf("%s", error_str);
+        }
+        else
+        {
+            printf("SUCCESS\n");
+            printf("version=%d\n", header.version);
+            printf("nr_sections=%d\n", header.no_of_sections);
+            for (int i=0; i<header.no_of_sections; i++)
+            {
+                printf("section%d: %s %d %d\n", i+1, section_header[i].name, section_header[i].sect_type, section_header[i].sect_size);
+            }
+        }
+    }
+    else
+    {
+        printf("ERROR!\npath is not a file");
+        exit(1);
+    }
+}
+
+void parse_err(char *err)
+{
+    if (parse_error == 1)
+    {
+        strcat(error_str, "|");
+    } else
+    {
+        strcpy(error_str, "ERROR\nwrong ");
+        parse_error = 1;
+    }
+    strcat(error_str, err);
 }
