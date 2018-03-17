@@ -9,8 +9,9 @@ int recursive = 0;
 char path[200];
 char filter[50];
 
-void list_function();
+void print_to_file();
 void extract_path(char* full_arg);
+void analyze_file();
 
 int main(int argc, char **argv)
 {
@@ -70,129 +71,139 @@ int main(int argc, char **argv)
                 }
             }
 
-            list_function(path, filter, recursive);
+            print_to_file();
+            analyze_file();
         }
     }
 
     return 0;
 }
 
-void list_function()
+void print_to_file()
 {
     if (path != NULL)
     {
         if (chdir(path) == 0)
         {
+            printf("SUCCESS\n");
+
             char command[100];
 
             if (recursive == 1)
             {
-                strcpy(command, "find ");
+                // if recursivity enabled, print to file all elements
+                // with the given parent path. Also print the permissions
+                strcpy(command, "find -printf '%M %p\r\n' ");
             }
             else
             {
-                strcpy(command, "find -maxdepth 1 ");
+                // if recursivity disabled, print to file all elements
+                // with the given path. Also print the permissions
+                strcpy(command, "find -maxdepth 1 -printf '%M %p\r\n' ");
             }
 
             strcat(command, "> temp.txt");
             system(command);
-
-            int fd = open("temp.txt", O_RDONLY);
-            char buffer[7000];
-            int n = read(fd, buffer, 7000);
-
-            unlink("temp.txt");
-
-            char *end_str;
-            char *token = strtok_r(buffer, "\n", &end_str);
-
-
-            while (token != NULL && n> 0)
-            {
-                char element_name[150];
-
-                if (strlen(token) == 1)
-                {
-                    strcpy(element_name, "SUCCESS");
-                }
-                else
-                {
-                    strcpy(element_name, path);
-                    strncat(element_name, token + 1, strlen(token) - 1);
-                }
-
-                if (!strstr(element_name, "temp.txt"))
-                {
-                    if (strstr(filter, "name_starts_with="))
-                    {
-                        char start[40];
-                        strncpy(start, filter + 17, strlen(filter) - 17);
-
-                        char buffer_subdir[150];
-                        strcpy(buffer_subdir, element_name);
-
-                        char *end_token;
-                        char *token_subdir = strtok_r(buffer_subdir, "/", &end_token);
-                        char token_element[40];
-
-                        while (token_subdir != NULL)
-                        {
-                            strcpy(token_element, token_subdir);
-                            token_subdir = strtok_r(NULL, "/", &end_token);
-                        }
-
-                        if (token_element != NULL)
-                        {
-                            int starts_with = 1;
-
-                            for (int i=0; i<strlen(start); i++)
-                            {
-                                if (start[i] != token_element[i])
-                                {
-                                    starts_with = 0;
-                                }
-                            }
-
-                            if (starts_with == 1)
-                            {
-                                printf("%s\n", element_name);
-                            }
-                        }
-                    }
-                    else if (strstr(filter, "permissions="))
-                    {
-                        char permission[40];
-                        strncpy(permission, filter + 12, strlen(filter) - 12);
-
-                        printf("%s\n", permission);
-
-
-                    }
-                    else
-                    {
-                        printf("%s\n", element_name);
-                    }
-                }
-
-                n = n -1 - strlen(token);
-
-                token = strtok_r(NULL, "\n", &end_str);
-            }
         }
         else
         {
-            printf("ERROR\ninvalid directory path\n");
+            printf("ERROR\ninvalid directory path");
+            exit(1);
         }
     }
     else
     {
-        printf("ERROR\ninvalid directory path\n");
+        printf("ERROR\ninvalid directory path");
+        exit(1);
     }
-
-
 }
 
 void extract_path(char* full_arg)
 {
     strncpy(path, full_arg + 5, strlen(full_arg) - 5);
+}
+
+void analyze_file()
+{
+    int fd = open("temp.txt", O_RDONLY);
+    char buffer[700000];
+    int n = read(fd, buffer, 700000);
+
+    // remove temp file
+    close(fd);
+    unlink("temp.txt");
+
+    // tokenize lines
+    char *end_str;
+    char *token = strtok_r(buffer, "\n", &end_str);
+
+    while (token != NULL && n > 0)
+    {
+        char element_name[200];
+
+        // tokenize at space. element of form
+        // drwxrwxr-x ./test_root/RXJTY
+
+        char *end_line;
+        char *permission_token = strtok_r(token, " ", &end_line);
+        char *name_token = strtok_r(NULL, " ", &end_line);
+
+        strcpy(element_name, path);
+        strncat(element_name, name_token + 1, strlen(name_token) - 1);
+
+        if (!strstr(element_name, "temp.txt") && strlen(name_token) > 2)
+        {
+            if (strstr(filter, "name_starts_with="))
+            {
+                char start[40];
+                strncpy(start, filter + 17, strlen(filter) - 17);
+
+                char buffer_subdir[150];
+                strcpy(buffer_subdir, element_name);
+
+                char *end_token;
+                char *token_subdir = strtok_r(buffer_subdir, "/", &end_token);
+                char token_element[40];
+
+                while (token_subdir != NULL)
+                {
+                    strcpy(token_element, token_subdir);
+                    token_subdir = strtok_r(NULL, "/", &end_token);
+                }
+
+                if (token_element != NULL)
+                {
+                    int starts_with = 1;
+
+                    for (int i=0; i < strlen(start); i++)
+                    {
+                        if (start[i] != token_element[i])
+                        {
+                            starts_with = 0;
+                        }
+                    }
+
+                    if (starts_with == 1)
+                    {
+                        printf("%s\n", element_name);
+                    }
+                }
+            }
+            else if (strstr(filter, "permissions="))
+            {
+                char permission[40];
+                strncpy(permission, filter + 12, strlen(filter) - 12);
+
+
+            }
+            else
+            {
+                printf("%s\n", element_name);
+            }
+        }
+
+        n = n -1 - strlen(token);
+
+        token = strtok_r(NULL, "\n", &end_str);
+    }
 }
