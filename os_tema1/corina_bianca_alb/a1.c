@@ -13,20 +13,31 @@
 
 #define NO_SECTION_TYPES 4
 
+int parse_cmd = 0;
+int findall_cmd = 0;
+
 int recursive = 0;
 char path[200];
 char filter[50];
+char section[100];
+char line[5];
 
 int wrong_type = 0;
 int parse_error = 0;
 char error_str[40];
+int section_error = 0;
+char error_str_sect[40];
 
 void print_to_file();
-void extract_path(char* full_arg);
+void extract_path_arg(char* full_arg);
+void extract_section_arg(char* full_arg);
+void extract_line_arg(char* full_arg);
 void analyze_file();
 void analyze_agrs(char *arg2, char *arg3, char *arg4);
 void parse_sf();
 void parse_err(char *err);
+void extract_section();
+void findall();
 
 struct SF_header
 {
@@ -66,18 +77,20 @@ int main(int argc, char **argv)
         }
         else if (strstr(argv[1], "parse"))
         {
-            extract_path(argv[2]);
+            parse_cmd = 1;
+            extract_path_arg(argv[2]);
             parse_sf();
-        }
-        else if (strstr(argv[1], "extract"))
-        {
-            analyze_agrs(argv[2], argv[3], argv[4]);
-
         }
         else if (strstr(argv[1], "findall"))
         {
-            extract_path(argv[2]);
-
+            findall_cmd = 1;
+            extract_path_arg(argv[2]);
+            print_to_file();
+        }
+        else if (strstr(argv[1], "extract"))
+        {
+            analyze_agrs(argv[2], argv[3],argv[4]);
+            extract_section();
         }
     }
 
@@ -94,11 +107,18 @@ void print_to_file()
 
             char command[100];
 
-            if (recursive == 1)
+            if (recursive == 1 || findall_cmd == 1)
             {
                 // if recursivity enabled, print to file all elements
                 // with the given parent path. Also print the permissions
-                strcpy(command, "find -printf '%M %p\r\n' ");
+                if (findall_cmd == 1)
+                {
+                    strcpy(command, "find -type f -printf '%M %p\r\n' ");
+                }
+                else
+                {
+                    strcpy(command, "find -printf '%M %p\r\n' ");
+                }
             }
             else
             {
@@ -123,9 +143,19 @@ void print_to_file()
     }
 }
 
-void extract_path(char* full_arg)
+void extract_path_arg(char* full_arg)
 {
     strncpy(path, full_arg + 5, strlen(full_arg) - 5);
+}
+
+void extract_section_arg(char* full_arg)
+{
+    strncpy(section, full_arg + 8, strlen(full_arg) - 8);
+}
+
+void extract_line_arg(char* full_arg)
+{
+    strncpy(line, full_arg + 5, strlen(full_arg) - 5);
 }
 
 void analyze_agrs(char *arg2, char *arg3, char *arg4)
@@ -134,7 +164,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
     {
         if (strstr(arg2, "path"))
         {
-            extract_path(arg2);
+            extract_path_arg(arg2);
         }
         else if (strstr(arg2, "recursive"))
         {
@@ -150,11 +180,15 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
     {
         if (strstr(arg3, "path"))
         {
-            extract_path(arg3);
+            extract_path_arg(arg3);
         }
         else if (strstr(arg3, "recursive"))
         {
             recursive = 1;
+        }
+        else if (strstr(arg3, "section"))
+        {
+            extract_section_arg(arg3);
         }
         else
         {
@@ -166,11 +200,15 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
     {
         if (strstr(arg4, "path"))
         {
-            extract_path(arg4);
+            extract_path_arg(arg4);
         }
         else if (strstr(arg4, "recursive"))
         {
             recursive = 1;
+        }
+        else if (strstr(arg4, "line"))
+        {
+            extract_line_arg(arg4);
         }
         else
         {
@@ -278,7 +316,7 @@ void parse_sf()
 
         if (fd < 0)
         {
-            printf("ERROR!\nfile cannot be opened");
+            printf("ERROR!\ninvalid file");
             exit(1);
         }
         else
@@ -386,24 +424,27 @@ void parse_sf()
             }
         }
 
-        if (parse_error == 1)
+        if (parse_cmd == 1)
         {
-            printf("%s", error_str);
-        }
-        else
-        {
-            printf("SUCCESS\n");
-            printf("version=%d\n", header.version);
-            printf("nr_sections=%d\n", header.no_of_sections);
-            for (int i=0; i<header.no_of_sections; i++)
+            if (parse_error == 1)
             {
-                printf("section%d: %s %d %d\n", i+1, section_header[i].name, section_header[i].sect_type, section_header[i].sect_size);
+                printf("%s", error_str);
+            }
+            else
+            {
+                printf("SUCCESS\n");
+                printf("version=%d\n", header.version);
+                printf("nr_sections=%d\n", header.no_of_sections);
+                for (int i=0; i<header.no_of_sections; i++)
+                {
+                    printf("section%d: %s %d %d\n", i+1, section_header[i].name, section_header[i].sect_type, section_header[i].sect_size);
+                }
             }
         }
     }
     else
     {
-        printf("ERROR!\npath is not a file");
+        printf("ERROR!\ninvalid file");
         exit(1);
     }
 }
@@ -419,4 +460,17 @@ void parse_err(char *err)
         parse_error = 1;
     }
     strcat(error_str, err);
+}
+
+void extract_section()
+{
+    parse_sf();
+    if (parse_error == 0)
+    {
+        printf("SUCESS\n");
+    }
+    else
+    {
+        printf("%s\n", error_str_sect);
+    }
 }
