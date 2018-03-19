@@ -13,12 +13,11 @@
 
 #define NO_SECTION_TYPES 4
 
-int parse_cmd = 0;
 int findall_cmd = 0;
 
 int recursive_arg = 0;
 char path_arg[200];
-char filter_arg[50];
+char filter_arg[100];
 char section_arg[100];
 char line_arg[5];
 
@@ -80,8 +79,7 @@ int main(int argc, char **argv)
         }
         else if (strstr(argv[1], "parse"))
         {
-            parse_cmd = 1;
-            extract_path_arg(argv[2]);
+            analyze_agrs(argv[2], argv[3], argv[4]);
             parse_sf();
         }
         else if (strstr(argv[1], "findall"))
@@ -92,7 +90,7 @@ int main(int argc, char **argv)
         }
         else if (strstr(argv[1], "extract"))
         {
-            analyze_agrs(argv[2], argv[3],argv[4]);
+            analyze_agrs(argv[2], argv[3], argv[4]);
             extract_section();
         }
     }
@@ -198,22 +196,32 @@ void print_from_test_root(char *full_path)
         token = strtok_r(NULL, "/", &end_str);
     }
     
-    if (strstr(filter_arg, "name_starts_with"))
+    if (strstr(filter_arg, "name_starts_with="))
     {
-        char start[40];
+        char start[60];
         strncpy(start, filter_arg + 17, strlen(filter_arg) - 17);
 
-        if (strstr(element_name, start))
+        int starts_with = 1;
+
+        for (int i=0; i < strlen(start); i++)
+        {
+            if (start[i] != element_name[i])
+            {
+                starts_with = 0;
+            }
+        }
+
+        if (starts_with == 1)
         {
             printf("%s\n", print_path);
         }
     }
-    else if (strstr(filter_arg, "permissions"))
+    else if (strstr(filter_arg, "permissions="))
     {            
         char permission[10];
         strncpy(permission, filter_arg + 12, strlen(filter_arg) - 12);
 
-        if (strstr(file_permission, permission))
+        if (strcmp(file_permission, permission) == 0)
         {
             printf("%s\n", print_path);
         }
@@ -256,7 +264,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
 {
     if (arg2 != NULL)
     {
-        if (strstr(arg2, "path"))
+        if (strstr(arg2, "path="))
         {
             extract_path_arg(arg2);
         }
@@ -264,7 +272,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         {
             recursive_arg = 1;
         }
-        else
+        else if (strstr(arg2, "name_starts_with=") || strstr(arg2, "permissions="))
         {
             strcpy(filter_arg, arg2);
         }
@@ -272,7 +280,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
 
     if (arg3 != NULL)
     {
-        if (strstr(arg3, "path"))
+        if (strstr(arg3, "path="))
         {
             extract_path_arg(arg3);
         }
@@ -280,11 +288,11 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         {
             recursive_arg = 1;
         }
-        else if (strstr(arg3, "section"))
-        {
-            extract_section_arg(arg3);
-        }
-        else
+        // else if (strstr(arg3, "section"))
+        // {
+        //     extract_section_arg(arg3);
+        // }
+        else if (strstr(arg3, "name_starts_with=") || strstr(arg3, "permissions="))
         {
             strcpy(filter_arg, arg3);
         }
@@ -292,7 +300,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
 
     if (arg4 != NULL)
     {
-        if (strstr(arg4, "path"))
+        if (strstr(arg4, "path="))
         {
             extract_path_arg(arg4);
         }
@@ -300,11 +308,11 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         {
             recursive_arg = 1;
         }
-        else if (strstr(arg4, "line"))
-        {
-            extract_line_arg(arg4);
-        }
-        else
+        // else if (strstr(arg4, "line"))
+        // {
+        //     extract_line_arg(arg4);
+        // }
+        else if (strstr(arg4, "name_starts_with=") || strstr(arg4, "permissions="))
         {
             strcpy(filter_arg, arg4);
         }
@@ -313,12 +321,18 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
 
 void parse_sf()
 {
+    char full_path[200];
+    getcwd(full_path, sizeof(full_path));
+
+    strcat(full_path, "/");
+    strcat(full_path, path_arg);
+
     struct stat path_stat;
-    stat(path_arg, &path_stat);
+    stat(full_path, &path_stat);
 
     if (S_ISREG(path_stat.st_mode))
     {
-        int fd = open(path_arg, O_RDONLY);
+        int fd = open(full_path, O_RDONLY);
 
         if (fd < 0)
         {
@@ -429,24 +443,21 @@ void parse_sf()
                 section_offset += 4;
             }
         }
-
-        if (parse_cmd == 1)
+       
+        if (parse_error == 1)
         {
-            if (parse_error == 1)
-            {
-                printf("%s", error_str);
-            }
-            else
-            {
-                printf("SUCCESS\n");
-                printf("version=%d\n", header.version);
-                printf("nr_sections=%d\n", header.no_of_sections);
-                for (int i=0; i<header.no_of_sections; i++)
-                {
-                    printf("section%d: %s %d %d\n", i+1, section_header[i].name, section_header[i].sect_type, section_header[i].sect_size);
-                }
-            }
+            printf("%s", error_str);
         }
+        else
+        {
+            printf("SUCCESS\n");
+            printf("version=%d\n", header.version);
+            printf("nr_sections=%d\n", header.no_of_sections);
+            for (int i=0; i<header.no_of_sections; i++)
+            {
+                printf("section%d: %s %d %d\n", i+1, section_header[i].name, section_header[i].sect_type, section_header[i].sect_size);
+            }
+        }        
     }
     else
     {
