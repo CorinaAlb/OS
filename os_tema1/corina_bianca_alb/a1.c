@@ -5,7 +5,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <dirent.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -16,11 +16,11 @@
 int parse_cmd = 0;
 int findall_cmd = 0;
 
-int recursive = 0;
-char path[200];
-char filter[50];
-char section[100];
-char line[5];
+int recursive_arg = 0;
+char path_arg[200];
+char filter_arg[50];
+char section_arg[100];
+char line_arg[5];
 
 int wrong_type = 0;
 int parse_error = 0;
@@ -28,16 +28,20 @@ char error_str[40];
 int section_error = 0;
 char error_str_sect[40];
 
-void print_to_file();
+void list_cmd();
+void print_dir_content(char* path);
 void extract_path_arg(char* full_arg);
 void extract_section_arg(char* full_arg);
 void extract_line_arg(char* full_arg);
 void analyze_file();
+void find_file_permission(char* file_permission, struct stat file_stat);
 void analyze_agrs(char *arg2, char *arg3, char *arg4);
 void parse_sf();
 void parse_err(char *err);
 void extract_section();
 void findall();
+
+void print_from_test_root(char *full_path);
 
 struct SF_header
 {
@@ -72,8 +76,7 @@ int main(int argc, char **argv)
         else if (strstr(argv[1], "list"))
         {
             analyze_agrs(argv[2], argv[3], argv[4]);
-            print_to_file();
-            analyze_file();
+            list_cmd();
         }
         else if (strstr(argv[1], "parse"))
         {
@@ -85,7 +88,7 @@ int main(int argc, char **argv)
         {
             findall_cmd = 1;
             extract_path_arg(argv[2]);
-            print_to_file();
+            list_cmd();
         }
         else if (strstr(argv[1], "extract"))
         {
@@ -97,38 +100,18 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void print_to_file()
+void list_cmd()
 {
-    if (path != NULL)
+    if (path_arg != NULL)
     {
-        if (chdir(path) == 0)
+        if (chdir(path_arg) == 0)
         {
             printf("SUCCESS\n");
 
-            char command[100];
+            char parent_path[200];
+            getcwd(parent_path, sizeof(parent_path));
 
-            if (recursive == 1 || findall_cmd == 1)
-            {
-                // if recursivity enabled, print to file all elements
-                // with the given parent path. Also print the permissions
-                if (findall_cmd == 1)
-                {
-                    strcpy(command, "find -type f -printf '%M %p\r\n' ");
-                }
-                else
-                {
-                    strcpy(command, "find -printf '%M %p\r\n' ");
-                }
-            }
-            else
-            {
-                // if recursivity disabled, print to file all elements
-                // with the given path. Also print the permissions
-                strcpy(command, "find -maxdepth 1 -printf '%M %p\r\n' ");
-            }
-
-            strcat(command, "> temp.txt");
-            system(command);
+            print_dir_content(parent_path);
         }
         else
         {
@@ -143,19 +126,130 @@ void print_to_file()
     }
 }
 
+void print_dir_content(char* parent_path)
+{
+    DIR *dir;
+    struct dirent *entry;
+    char full_path[200];
+
+    if (!(dir = opendir(parent_path)))
+    {
+        return;
+    }
+        
+    while ((entry = readdir(dir)) != NULL) {
+        strcpy(full_path, parent_path);
+        strcat(full_path, "/");
+        strcat(full_path, entry->d_name);
+
+        char full_path_cpy[200];    
+        strcpy(full_path_cpy, full_path);
+
+        if (entry->d_type == DT_DIR) {
+            if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+            {                   
+                print_from_test_root(full_path_cpy);
+                if (recursive_arg == 1)
+                {
+                    print_dir_content(full_path);
+                }
+            }                            
+        }
+        else
+        {
+            print_from_test_root(full_path_cpy);
+        }
+    }
+
+    closedir(dir);
+}
+
+void print_from_test_root(char *full_path)
+{
+    char file_permission[10];
+    struct stat file_stat;
+    if(stat(full_path, &file_stat) >= 0)
+    {
+       find_file_permission(file_permission, file_stat);
+    }
+
+    int found_root = 0;
+    char *end_str;
+    char *token = strtok_r(full_path, "/", &end_str);
+
+    char element_name[100];
+    char print_path[200];
+    strcpy(print_path, "test_root");
+
+    while (token != NULL)
+    {
+        if (strstr(token, "test_root"))
+        {
+            found_root = 1;
+        } 
+        else if (found_root == 1)
+        {
+            strcat(print_path, "/");
+            strcat(print_path, token);
+
+            strcpy(element_name, token);
+        }
+        
+        token = strtok_r(NULL, "/", &end_str);
+    }
+    
+    if (strstr(filter_arg, "name_starts_with"))
+    {
+        char start[40];
+        strncpy(start, filter_arg + 17, strlen(filter_arg) - 17);
+
+        if (strstr(element_name, start))
+        {
+            printf("%s\n", print_path);
+        }
+    }
+    else if (strstr(filter_arg, "permissions"))
+    {            
+        char permission[10];
+        strncpy(permission, filter_arg + 12, strlen(filter_arg) - 12);
+
+        if (strstr(file_permission, permission))
+        {
+            printf("%s\n", print_path);
+        }
+    }
+    else
+    {
+        printf("%s\n", print_path);
+    }
+}
+
+void find_file_permission(char* file_permission, struct stat file_stat)
+{
+    strcpy(file_permission, (file_stat.st_mode & S_IRUSR) ? "r" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IWUSR) ? "w" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IXUSR) ? "x" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IRGRP) ? "r" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IWGRP) ? "w" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IXGRP) ? "x" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IROTH) ? "r" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IWOTH) ? "w" : "-");
+    strcat(file_permission, (file_stat.st_mode & S_IXOTH) ? "x" : "-");
+}
+
 void extract_path_arg(char* full_arg)
 {
-    strncpy(path, full_arg + 5, strlen(full_arg) - 5);
+    strncpy(path_arg, full_arg + 5, strlen(full_arg) - 5);
 }
 
 void extract_section_arg(char* full_arg)
 {
-    strncpy(section, full_arg + 8, strlen(full_arg) - 8);
+    strncpy(section_arg, full_arg + 8, strlen(full_arg) - 8);
 }
 
 void extract_line_arg(char* full_arg)
 {
-    strncpy(line, full_arg + 5, strlen(full_arg) - 5);
+    strncpy(line_arg, full_arg + 5, strlen(full_arg) - 5);
 }
 
 void analyze_agrs(char *arg2, char *arg3, char *arg4)
@@ -168,11 +262,11 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         }
         else if (strstr(arg2, "recursive"))
         {
-            recursive = 1;
+            recursive_arg = 1;
         }
         else
         {
-            strcpy(filter, arg2);
+            strcpy(filter_arg, arg2);
         }
     }
 
@@ -184,7 +278,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         }
         else if (strstr(arg3, "recursive"))
         {
-            recursive = 1;
+            recursive_arg = 1;
         }
         else if (strstr(arg3, "section"))
         {
@@ -192,7 +286,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         }
         else
         {
-            strcpy(filter, arg3);
+            strcpy(filter_arg, arg3);
         }
     }
 
@@ -204,7 +298,7 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         }
         else if (strstr(arg4, "recursive"))
         {
-            recursive = 1;
+            recursive_arg = 1;
         }
         else if (strstr(arg4, "line"))
         {
@@ -212,107 +306,19 @@ void analyze_agrs(char *arg2, char *arg3, char *arg4)
         }
         else
         {
-            strcpy(filter, arg4);
+            strcpy(filter_arg, arg4);
         }
-    }
-}
-
-void analyze_file()
-{
-    int fd = open("temp.txt", O_RDONLY);
-    char buffer[700000];
-    int n = read(fd, buffer, 700000);
-
-    // remove temp file
-    close(fd);
-    unlink("temp.txt");
-
-    // tokenize lines
-    char *end_str;
-    char *token = strtok_r(buffer, "\n", &end_str);
-
-    while (token != NULL && n > 0)
-    {
-        char element_name[200];
-
-        // tokenize at space. element of form
-        // drwxrwxr-x ./test_root/RXJTY
-
-        char *end_line;
-        char *permission_token = strtok_r(token, " ", &end_line);
-        char *name_token = strtok_r(NULL, " ", &end_line);
-
-        strcpy(element_name, path);
-        strncat(element_name, name_token + 1, strlen(name_token) - 1);
-
-        if (!strstr(element_name, "temp.txt") && strlen(name_token) > 2)
-        {
-            if (strstr(filter, "name_starts_with="))
-            {
-                char start[40];
-                strncpy(start, filter + 17, strlen(filter) - 17);
-
-                char buffer_subdir[150];
-                strcpy(buffer_subdir, element_name);
-
-                char *end_token;
-                char *token_subdir = strtok_r(buffer_subdir, "/", &end_token);
-                char token_element[40];
-
-                while (token_subdir != NULL)
-                {
-                    strcpy(token_element, token_subdir);
-                    token_subdir = strtok_r(NULL, "/", &end_token);
-                }
-
-                if (token_element != NULL)
-                {
-                    int starts_with = 1;
-
-                    for (int i=0; i < strlen(start); i++)
-                    {
-                        if (start[i] != token_element[i])
-                        {
-                            starts_with = 0;
-                        }
-                    }
-
-                    if (starts_with == 1)
-                    {
-                        printf("%s\n", element_name);
-                    }
-                }
-            }
-            else if (strstr(filter, "permissions="))
-            {
-                char permission[10];
-                strncpy(permission, filter + 17, strlen(filter) - 17);
-
-                if (strstr(permission_token, permission))
-                {
-                    printf("%s\n", element_name);
-                }
-            }
-            else
-            {
-                printf("%s\n", element_name);
-            }
-        }
-
-        n = n -1 - strlen(token);
-
-        token = strtok_r(NULL, "\n", &end_str);
     }
 }
 
 void parse_sf()
 {
     struct stat path_stat;
-    stat(path, &path_stat);
+    stat(path_arg, &path_stat);
 
     if (S_ISREG(path_stat.st_mode))
     {
-        int fd = open(path, O_RDONLY);
+        int fd = open(path_arg, O_RDONLY);
 
         if (fd < 0)
         {
